@@ -338,23 +338,47 @@ BayesianNetworkAnalysis <- function(jaspResults, dataset, options) {
       }
       # Estimate network
       jaspBase::.setSeedJASP(options)
-      easybgmFit <- try(easybgm::easybgm(data       = dataset[[nw]],
-                                         type       = "ordinal",
-                                         package    = "bgms",
-                                         iter       = options[["iter"]],
-                                         save       = TRUE,
-                                         centrality = FALSE,
-                                         warmup     = options[["burnin"]], # changed name
-                                         chains     = 1, # fix for now (maybe add an option for the users to set this)
-                                         inclusion_probability = options[["gPrior"]],
-                                         pairwise_scale        = options[["interactionScale"]], # changed name
-                                         edge_prior            = options[["edgePrior"]],
-                                         main_alpha            = options[["thresholdAlpha"]], # changed name
-                                         main_beta             = options[["thresholdBeta"]],
-                                         beta_bernoulli_alpha  = options[["betaAlpha"]],
-                                         beta_bernoulli_beta   = options[["betaBeta"]],
-                                         dirichlet_alpha       = options[["dirichletAlpha"]]))
+      if(is.null(options[["groupingVariable"]])){
+        easybgmFit <- try(easybgm::easybgm(data       = dataset[[nw]],
+                                          type       = "ordinal",
+                                          package    = "bgms",
+                                          iter       = options[["iter"]],
+                                          save       = TRUE,
+                                          centrality = FALSE,
+                                          warmup     = options[["burnin"]], # changed name
+                                          chains     = 1, # fix for now (maybe add an option for the users to set this)
+                                          inclusion_probability = options[["gPrior"]],
+                                          pairwise_scale        = options[["interactionScale"]], # changed name
+                                          edge_prior            = options[["edgePrior"]],
+                                          main_alpha            = options[["thresholdAlpha"]], # changed name
+                                          main_beta             = options[["thresholdBeta"]],
+                                          beta_bernoulli_alpha  = options[["betaAlpha"]],
+                                          beta_bernoulli_beta   = options[["betaBeta"]],
+                                          dirichlet_alpha       = options[["dirichletAlpha"]]))
+      } else {
+        data <- dataset[[nw]]
+        group_labels <- levels(dataset[[nw]][[options[["groupingVariable"]]]])
+        if(length(group_labels) == 2L){
+          data <- list(dataset[[nw]][dataset[[nw]][[options[["groupingVariable"]]]]==group_labels[1L], ],
+                       dataset[[nw]][dataset[[nw]][[options[["groupingVariable"]]]]==group_labels[2L], ])
+        }
 
+        easybgmFit <- try(easybgm::easybgm_compare(data       = data,
+                                          type       = "ordinal",
+                                          package    = "bgms",
+                                          group_indicator = options[["groupingVariable"]], 
+                                          iter       = options[["iter"]],
+                                          save       = TRUE,
+                                          centrality = FALSE,
+                                          warmup     = options[["burnin"]], # changed name
+                                          chains     = 1, # fix for now (maybe add an option for the users to set this)
+                                          pairwise_scale        = options[["interactionScale"]], # changed name
+                                          main_alpha            = options[["thresholdAlpha"]], # changed name
+                                          main_beta             = options[["thresholdBeta"]],
+                                          beta_bernoulli_alpha  = options[["betaAlpha"]],
+                                          beta_bernoulli_beta   = options[["betaBeta"]],
+                                          dirichlet_alpha       = options[["dirichletAlpha"]]))
+      }
 
 
       if (isTryError(easybgmFit)) {
