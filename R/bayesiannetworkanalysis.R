@@ -20,7 +20,9 @@ BayesianNetworkAnalysis <- function(jaspResults, dataset, options) {
   # MissingValues needed for the .networkAnalysisReadData function in the frequentist network module:
   options[["missingValues"]] <- "listwise" # Unfortunately BDgraph does not work with pairwise missing values
 
-  dataset <- .networkAnalysisReadData(dataset, options) # from networkanalysis.R
+  if(!options[["anova"]]){
+    dataset <- .networkAnalysisReadData(dataset, options) # from networkanalysis.R
+  }
 
   mainContainer <- .bayesianNetworkAnalysisSetupMainContainerAndTable(jaspResults, dataset, options)
   .bayesianNetworkAnalysisErrorCheck(mainContainer, dataset, options)
@@ -104,6 +106,7 @@ BayesianNetworkAnalysis <- function(jaspResults, dataset, options) {
       .hasErrors(dataset = dataset,
                  type = c("observations"),
                  observations.amount = "< 3",
+ #                all.target = options[["variables"]],
                  exitAnalysisIfErrors = TRUE)
     }
   }
@@ -202,207 +205,230 @@ BayesianNetworkAnalysis <- function(jaspResults, dataset, options) {
 
   networks <- vector("list", length(dataset))
 
-  for (nw in seq_along(dataset)) {
-
-    dataset[[nw]] <- dataset[[nw]][options[["variables"]]]
-
-    if (options[["model"]] == "ggm") {
-      # Estimate network
-      jaspBase::.setSeedJASP(options)
-      easybgmFit <- try(easybgm::easybgm(data       = apply(dataset[[nw]], 2, as.numeric),
-                                         type       = "continuous",
-                                         package    = "BDgraph" ,
-                                         iter       = options[["iter"]],
-                                         save       = FALSE,  # due to the new version
-                                         centrality = FALSE,
-                                         burnin     = options[["burnin"]],
-                                         g.start    = options[["initialConfiguration"]],
-                                         df.prior   = options[["dfPrior"]],
-                                         g.prior    = options[["gPrior"]]))
-
-      if (isTryError(easybgmFit)) {
-        message <- .extractErrorMessage(easybgmFit)
-        .quitAnalysis(gettextf("The analysis failed with the following error message:\n%s", message))
-      }
-
-
-
-      # Extract results with enforced variable ordering
-      easybgmResult <- list()
-      variables <- options[["variables"]]
-
-      # Get estimates matrix and ensure proper ordering
-      estimates <- as.matrix(easybgmFit$parameters)
-      if(!identical(rownames(estimates), variables)) {
-        estimates <- estimates[variables, variables, drop = FALSE]
-      }
-
-      # Get structure matrix and ensure proper ordering
-      structure <- easybgmFit$structure
-      if(!identical(rownames(structure), variables)) {
-        structure <- structure[variables, variables, drop = FALSE]
-      }
-
-      # Create graph with enforced ordering
-      easybgmResult$graph <- estimates * structure
-      rownames(easybgmResult$graph) <- variables
-      colnames(easybgmResult$graph) <- variables
-
-      # [Rest of the assignments]
-      easybgmResult$graphWeights <- easybgmFit$graph_weights
-      easybgmResult$inclusionProbabilities <- easybgmFit$inc_probs
-      easybgmResult$BF <- easybgmFit$inc_BF
-      easybgmResult$structure <- structure
-      easybgmResult$estimates <- estimates
-      easybgmResult$sampleGraphs <- easybgmFit$sample_graph
-      easybgmResult$samplesPosterior <- easybgmFit$samples_posterior
-
-      networks[[nw]] <- easybgmResult
-
+  if(options[["anova"]]) {
+    if (length(dataset) < 2L) {
+      .quitAnalysis(gettext("ANOVA option can only be used when there are exactly 2 groups."))
     }
-
-    # if model is gcgm
-    if (options[["model"]] == "gcgm") {
-      nonContVariables <- c()
-      for (var in options[["variables"]]) {
-
-        # A 1 indicates noncontinuous variables:
-        if (is.factor(dataset[[nw]][[var]])) {
-          nonContVariables <- c(nonContVariables, 1)
-        } else {
-          nonContVariables <- c(nonContVariables, 0)
-        }
-      }
-      # Estimate network
-      jaspBase::.setSeedJASP(options)
-      easybgmFit <- try(easybgm::easybgm(data       = apply(dataset[[nw]], 2, as.numeric),
-                                         type       = "mixed",
-                                         package    = "BDgraph",
-                                         not_cont   = nonContVariables,
-                                         iter       = options[["iter"]],
-                                         save       = FALSE, # due to the new version (for consistency)
-                                         centrality = FALSE,
-                                         burnin     = options[["burnin"]],
-                                         g.start    = options[["initialConfiguration"]],
-                                         df.prior   = options[["dfPrior"]],
-                                         g.prior    = options[["gPrior"]]))
-
-
-      if (isTryError(easybgmFit)) {
-        message <- .extractErrorMessage(easybgmFit)
-        .quitAnalysis(gettextf("The analysis failed with the following error message:\n%s", message))
-      }
-
-
-      # Extract results with enforced variable ordering
-      easybgmResult <- list()
-      variables <- options[["variables"]]
-
-      # Get estimates matrix and ensure proper ordering
-      estimates <- as.matrix(easybgmFit$parameters)
-      if(!identical(rownames(estimates), variables)) {
-        estimates <- estimates[variables, variables, drop = FALSE]
-      }
-
-      # Get structure matrix and ensure proper ordering
-      structure <- easybgmFit$structure
-      if(!identical(rownames(structure), variables)) {
-        structure <- structure[variables, variables, drop = FALSE]
-      }
-
-      # Create graph with enforced ordering
-      easybgmResult$graph <- estimates * structure
-      rownames(easybgmResult$graph) <- variables
-      colnames(easybgmResult$graph) <- variables
-
-      # [Rest of the assignments]
-      easybgmResult$graphWeights <- easybgmFit$graph_weights
-      easybgmResult$inclusionProbabilities <- easybgmFit$inc_probs
-      easybgmResult$BF <- easybgmFit$inc_BF
-      easybgmResult$structure <- structure
-      easybgmResult$estimates <- estimates
-      easybgmResult$sampleGraphs <- easybgmFit$sample_graph
-      easybgmResult$samplesPosterior <- easybgmFit$samples_posterior
-
-      networks[[nw]] <- easybgmResult
+    if (options[["model"]] != "omrf") {
+      .quitAnalysis(gettext("ANOVA option is only available for the Ordinal Markov Random Field."))
+    }
+    group_labels <- levels(dataset[[options[["groupingVariable"]]]])
+    if(length(group_labels) == 2L){
+      data <- list(dataset[dataset[[options[["groupingVariable"]]]]==group_labels[1L], ],
+                       dataset[dataset[[options[["groupingVariable"]]]]==group_labels[2L], ])
+    }
+    easybgmFit <- try(easybgm::easybgm_compare(data       = data,
+                                  type       = "ordinal",
+                                  package    = "bgms",
+                                  group_indicator = options[["groupingVariable"]], 
+                                  iter       = options[["iter"]],
+                                  save       = TRUE,
+                                  centrality = FALSE,
+                                  warmup     = options[["burnin"]], # changed name
+                                  chains     = 1, # fix for now (maybe add an option for the users to set this)
+                                  pairwise_scale        = options[["interactionScale"]], # changed name
+                                  main_alpha            = options[["thresholdAlpha"]], # changed name
+                                  main_beta             = options[["thresholdBeta"]],
+                                  beta_bernoulli_alpha  = options[["betaAlpha"]],
+                                  beta_bernoulli_beta   = options[["betaBeta"]],
+                                  dirichlet_alpha       = options[["dirichletAlpha"]]))
+    if (isTryError(easybgmFit)) {
+      message <- .extractErrorMessage(easybgmFit)
+      .quitAnalysis(gettextf("The analysis failed with the following error message:\n%s", message))
     }
 
 
-    # if model is ordinal Markov random field
-    if (options[["model"]] == "omrf") {
-      for (var in options[["variables"]]) {
-        # Check if variables are binary or ordinal:
-        if (!is.factor(dataset[[nw]][[var]])) {
-          .quitAnalysis(gettext("Some of the variables you have entered for analysis are not binary or ordinal. Please make sure that all variables are binary or ordinal or change the model to gcgm."))
+    # Extract results
+    easybgmResult <- list()
+
+    easybgmResult$graphWeights           <- easybgmFit$graph_weights
+    easybgmResult$inclusionProbabilities <- easybgmFit$inc_probs
+    easybgmResult$BF                     <- easybgmFit$inc_BF
+    easybgmResult$structure              <- easybgmFit$structure
+    easybgmResult$estimates              <- as.matrix(easybgmFit$parameters)
+    easybgmResult$graph                  <- easybgmResult$estimates*easybgmResult$structure
+    easybgmResult$sampleGraphs           <- easybgmFit$sample_graph
+    easybgmResult$samplesPosterior       <- easybgmFit$samples_posterior
+
+    networks[[1]] <- easybgmResult                             
+  }
+  else{
+    for (nw in seq_along(dataset)) {
+
+      dataset[[nw]] <- dataset[[nw]][options[["variables"]]]
+
+      if (options[["model"]] == "ggm") {
+        # Estimate network
+        jaspBase::.setSeedJASP(options)
+        easybgmFit <- try(easybgm::easybgm(data       = apply(dataset[[nw]], 2, as.numeric),
+                                          type       = "continuous",
+                                          package    = "BDgraph" ,
+                                          iter       = options[["iter"]],
+                                          save       = FALSE,  # due to the new version
+                                          centrality = FALSE,
+                                          burnin     = options[["burnin"]],
+                                          g.start    = options[["initialConfiguration"]],
+                                          df.prior   = options[["dfPrior"]],
+                                          g.prior    = options[["gPrior"]]))
+
+        if (isTryError(easybgmFit)) {
+          message <- .extractErrorMessage(easybgmFit)
+          .quitAnalysis(gettextf("The analysis failed with the following error message:\n%s", message))
         }
+
+
+
+        # Extract results with enforced variable ordering
+        easybgmResult <- list()
+        variables <- options[["variables"]]
+
+        # Get estimates matrix and ensure proper ordering
+        estimates <- as.matrix(easybgmFit$parameters)
+        if(!identical(rownames(estimates), variables)) {
+          estimates <- estimates[variables, variables, drop = FALSE]
+        }
+
+        # Get structure matrix and ensure proper ordering
+        structure <- easybgmFit$structure
+        if(!identical(rownames(structure), variables)) {
+          structure <- structure[variables, variables, drop = FALSE]
+        }
+
+        # Create graph with enforced ordering
+        easybgmResult$graph <- estimates * structure
+        rownames(easybgmResult$graph) <- variables
+        colnames(easybgmResult$graph) <- variables
+
+        # [Rest of the assignments]
+        easybgmResult$graphWeights <- easybgmFit$graph_weights
+        easybgmResult$inclusionProbabilities <- easybgmFit$inc_probs
+        easybgmResult$BF <- easybgmFit$inc_BF
+        easybgmResult$structure <- structure
+        easybgmResult$estimates <- estimates
+        easybgmResult$sampleGraphs <- easybgmFit$sample_graph
+        easybgmResult$samplesPosterior <- easybgmFit$samples_posterior
+
+        networks[[nw]] <- easybgmResult
+
       }
-      # Estimate network
-      jaspBase::.setSeedJASP(options)
-      if(is.null(options[["groupingVariable"]])){
+
+      # if model is gcgm
+      if (options[["model"]] == "gcgm") {
+        nonContVariables <- c()
+        for (var in options[["variables"]]) {
+
+          # A 1 indicates noncontinuous variables:
+          if (is.factor(dataset[[nw]][[var]])) {
+            nonContVariables <- c(nonContVariables, 1)
+          } else {
+            nonContVariables <- c(nonContVariables, 0)
+          }
+        }
+        # Estimate network
+        jaspBase::.setSeedJASP(options)
+        easybgmFit <- try(easybgm::easybgm(data       = apply(dataset[[nw]], 2, as.numeric),
+                                          type       = "mixed",
+                                          package    = "BDgraph",
+                                          not_cont   = nonContVariables,
+                                          iter       = options[["iter"]],
+                                          save       = FALSE, # due to the new version (for consistency)
+                                          centrality = FALSE,
+                                          burnin     = options[["burnin"]],
+                                          g.start    = options[["initialConfiguration"]],
+                                          df.prior   = options[["dfPrior"]],
+                                          g.prior    = options[["gPrior"]]))
+
+
+        if (isTryError(easybgmFit)) {
+          message <- .extractErrorMessage(easybgmFit)
+          .quitAnalysis(gettextf("The analysis failed with the following error message:\n%s", message))
+        }
+
+
+        # Extract results with enforced variable ordering
+        easybgmResult <- list()
+        variables <- options[["variables"]]
+
+        # Get estimates matrix and ensure proper ordering
+        estimates <- as.matrix(easybgmFit$parameters)
+        if(!identical(rownames(estimates), variables)) {
+          estimates <- estimates[variables, variables, drop = FALSE]
+        }
+
+        # Get structure matrix and ensure proper ordering
+        structure <- easybgmFit$structure
+        if(!identical(rownames(structure), variables)) {
+          structure <- structure[variables, variables, drop = FALSE]
+        }
+
+        # Create graph with enforced ordering
+        easybgmResult$graph <- estimates * structure
+        rownames(easybgmResult$graph) <- variables
+        colnames(easybgmResult$graph) <- variables
+
+        # [Rest of the assignments]
+        easybgmResult$graphWeights <- easybgmFit$graph_weights
+        easybgmResult$inclusionProbabilities <- easybgmFit$inc_probs
+        easybgmResult$BF <- easybgmFit$inc_BF
+        easybgmResult$structure <- structure
+        easybgmResult$estimates <- estimates
+        easybgmResult$sampleGraphs <- easybgmFit$sample_graph
+        easybgmResult$samplesPosterior <- easybgmFit$samples_posterior
+
+        networks[[nw]] <- easybgmResult
+      }
+
+
+      # if model is ordinal Markov random field
+      if (options[["model"]] == "omrf") {
+        for (var in options[["variables"]]) {
+          # Check if variables are binary or ordinal:
+          if (!is.factor(dataset[[nw]][[var]])) {
+            .quitAnalysis(gettext("Some of the variables you have entered for analysis are not binary or ordinal. Please make sure that all variables are binary or ordinal or change the model to gcgm."))
+          }
+        }
+        # Estimate network
+        jaspBase::.setSeedJASP(options)
         easybgmFit <- try(easybgm::easybgm(data       = dataset[[nw]],
-                                          type       = "ordinal",
-                                          package    = "bgms",
-                                          iter       = options[["iter"]],
-                                          save       = TRUE,
-                                          centrality = FALSE,
-                                          warmup     = options[["burnin"]], # changed name
-                                          chains     = 1, # fix for now (maybe add an option for the users to set this)
-                                          inclusion_probability = options[["gPrior"]],
-                                          pairwise_scale        = options[["interactionScale"]], # changed name
-                                          edge_prior            = options[["edgePrior"]],
-                                          main_alpha            = options[["thresholdAlpha"]], # changed name
-                                          main_beta             = options[["thresholdBeta"]],
-                                          beta_bernoulli_alpha  = options[["betaAlpha"]],
-                                          beta_bernoulli_beta   = options[["betaBeta"]],
-                                          dirichlet_alpha       = options[["dirichletAlpha"]]))
-      } else {
-        data <- dataset[[nw]]
-        group_labels <- levels(dataset[[nw]][[options[["groupingVariable"]]]])
-        if(length(group_labels) == 2L){
-          data <- list(dataset[[nw]][dataset[[nw]][[options[["groupingVariable"]]]]==group_labels[1L], ],
-                       dataset[[nw]][dataset[[nw]][[options[["groupingVariable"]]]]==group_labels[2L], ])
+                                            type       = "ordinal",
+                                            package    = "bgms",
+                                            iter       = options[["iter"]],
+                                            save       = TRUE,
+                                            centrality = FALSE,
+                                            warmup     = options[["burnin"]], # changed name
+                                            chains     = 1, # fix for now (maybe add an option for the users to set this)
+                                            inclusion_probability = options[["gPrior"]],
+                                            pairwise_scale        = options[["interactionScale"]], # changed name
+                                            edge_prior            = options[["edgePrior"]],
+                                            main_alpha            = options[["thresholdAlpha"]], # changed name
+                                            main_beta             = options[["thresholdBeta"]],
+                                            beta_bernoulli_alpha  = options[["betaAlpha"]],
+                                            beta_bernoulli_beta   = options[["betaBeta"]],
+                                            dirichlet_alpha       = options[["dirichletAlpha"]]))
+
+
+        if (isTryError(easybgmFit)) {
+          message <- .extractErrorMessage(easybgmFit)
+          .quitAnalysis(gettextf("The analysis failed with the following error message:\n%s", message))
         }
 
-        easybgmFit <- try(easybgm::easybgm_compare(data       = data,
-                                          type       = "ordinal",
-                                          package    = "bgms",
-                                          group_indicator = options[["groupingVariable"]], 
-                                          iter       = options[["iter"]],
-                                          save       = TRUE,
-                                          centrality = FALSE,
-                                          warmup     = options[["burnin"]], # changed name
-                                          chains     = 1, # fix for now (maybe add an option for the users to set this)
-                                          pairwise_scale        = options[["interactionScale"]], # changed name
-                                          main_alpha            = options[["thresholdAlpha"]], # changed name
-                                          main_beta             = options[["thresholdBeta"]],
-                                          beta_bernoulli_alpha  = options[["betaAlpha"]],
-                                          beta_bernoulli_beta   = options[["betaBeta"]],
-                                          dirichlet_alpha       = options[["dirichletAlpha"]]))
+
+        # Extract results
+        easybgmResult <- list()
+
+        easybgmResult$graphWeights           <- easybgmFit$graph_weights
+        easybgmResult$inclusionProbabilities <- easybgmFit$inc_probs
+        easybgmResult$BF                     <- easybgmFit$inc_BF
+        easybgmResult$structure              <- easybgmFit$structure
+        easybgmResult$estimates              <- as.matrix(easybgmFit$parameters)
+        easybgmResult$graph                  <- easybgmResult$estimates*easybgmResult$structure
+        easybgmResult$sampleGraphs           <- easybgmFit$sample_graph
+        easybgmResult$samplesPosterior       <- easybgmFit$samples_posterior
+
+        networks[[nw]] <- easybgmResult
       }
-
-
-      if (isTryError(easybgmFit)) {
-        message <- .extractErrorMessage(easybgmFit)
-        .quitAnalysis(gettextf("The analysis failed with the following error message:\n%s", message))
-      }
-
-
-      # Extract results
-      easybgmResult <- list()
-
-      easybgmResult$graphWeights           <- easybgmFit$graph_weights
-      easybgmResult$inclusionProbabilities <- easybgmFit$inc_probs
-      easybgmResult$BF                     <- easybgmFit$inc_BF
-      easybgmResult$structure              <- easybgmFit$structure
-      easybgmResult$estimates              <- as.matrix(easybgmFit$parameters)
-      easybgmResult$graph                  <- easybgmResult$estimates*easybgmResult$structure
-      easybgmResult$sampleGraphs           <- easybgmFit$sample_graph
-      easybgmResult$samplesPosterior       <- easybgmFit$samples_posterior
-
-      networks[[nw]] <- easybgmResult
     }
   }
-
   return(networks)
 }
 

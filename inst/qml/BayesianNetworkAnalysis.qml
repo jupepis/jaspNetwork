@@ -35,6 +35,7 @@ VariablesForm
 								title: qsTr("Split");
 								singleVariable: true;
 								allowedColumns: ["nominal"] }
+		CheckBox { name: "anova"; label: qsTr("ANOVA") }
 	}
 
 	DropDown
