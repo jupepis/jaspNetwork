@@ -23,20 +23,26 @@ import JASP.Controls
 Form
 {
 
-VariablesForm
+  VariablesForm
 	{
 		AvailableVariablesList { name: "allVariablesList" }
-		AssignedVariablesList  { name: "variables";
+		AssignedVariablesList  {
+            		id: networkVariables;
+            		name: "variables";
 								title: qsTr("Dependent Variables");
 								allowedColumns: ["ordinal", "scale"];
 								allowTypeChange: true;
-								id: networkVariables}
-		AssignedVariablesList { name: "groupingVariable";
+								}
+		AssignedVariablesList {
+		            id: groupingVariable;
+		            name: "groupingVariable";
 								title: qsTr("Split");
 								singleVariable: true;
-								allowedColumns: ["nominal"] }
-		CheckBox { name: "anova"; label: qsTr("ANOVA") }
+								allowedColumns: ["nominal"];
+							  }
 	}
+
+	property bool hasSplit: groupingVariable.count > 0
 
 	DropDown
 	{
@@ -141,7 +147,62 @@ VariablesForm
 		anchors.fill: parent
 
 		Group {
+		  title: qsTr("Network Difference Priors")
+		  visible: model.currentValue === "omrf" && hasSplit
+		  Column {
+		    spacing: 10
+
+		    DropDown
+				{
+					id: differencePrior
+					name: "differencePrior"
+					label: qsTr("Difference prior:")
+					preferredWidth: 300
+					values: [
+						{ value: "Bernoulli",			label: qsTr("Bernoulli")				},
+						{ value: "Beta-Bernoulli",		label: qsTr("Beta-binomial")			}
+					]
+				}
+		  }
+
+      DoubleField
+			{
+				name: "PriorDiffProb"
+				label: qsTr("Prior difference probability:")
+				value: 0.5
+				min: 0
+				max: 1
+				inclusive: JASP.MaxOnly
+				preferredWidth: 300
+				visible: differencePrior.currentValue === "Bernoulli"
+		   }
+
+			DoubleField
+			{
+				name: "betaAlphaDiff"
+				label: qsTr("Shape parameter 1:")
+				value: 1
+				min: 0
+				inclusive: JASP.None
+				preferredWidth: 300
+				visible: differencePrior.currentValue === "Beta-Bernoulli"
+			}
+
+			DoubleField
+			{
+				name: "betaBetaDiff"
+				label: qsTr("Shape parameter 2:")
+				value: 1
+				min: 0
+				inclusive: JASP.None
+				preferredWidth: 300
+				visible: differencePrior.currentValue === "Beta-Bernoulli"
+			}
+		}
+
+		Group {
 			title: qsTr("Network Structure (Edge) Priors")
+			visible: model.currentValue === "ggm" || model.currentValue === "gcgm" || (model.currentValue === "omrf" && !hasSplit)
 			Column {
 				spacing: 10
 				DropDown
@@ -178,7 +239,7 @@ VariablesForm
 					min: 0
 					inclusive: JASP.None
 					preferredWidth: 300
-					visible: (model.currentValue === "omrf") && (edgePrior.currentValue === "Beta-Bernoulli" || edgePrior.currentValue === "Stochastic-Block")
+					visible: model.currentValue === "omrf" && (edgePrior.currentValue === "Beta-Bernoulli" || edgePrior.currentValue === "Stochastic-Block")
 				}
 
 				DoubleField
@@ -189,7 +250,7 @@ VariablesForm
 					min: 0
 					inclusive: JASP.None
 					preferredWidth: 300
-					visible: (model.currentValue === "omrf") && (edgePrior.currentValue === "Beta-Bernoulli" || edgePrior.currentValue === "Stochastic-Block")
+					visible: model.currentValue === "omrf" && (edgePrior.currentValue === "Beta-Bernoulli" || edgePrior.currentValue === "Stochastic-Block")
 				}
 
 				DoubleField
@@ -200,7 +261,7 @@ VariablesForm
 					min: 0
 					inclusive: JASP.None
 					preferredWidth: 300
-					visible: (model.currentValue === "omrf") && (edgePrior.currentValue === "Stochastic-Block")
+					visible: model.currentValue === "omrf" && edgePrior.currentValue === "Stochastic-Block"
 				}
 
 				DropDown
@@ -235,6 +296,17 @@ VariablesForm
 
 					preferredWidth: 300
 					visible: model.currentValue === "ggm" || model.currentValue === "gcgm"
+				}
+
+				DoubleField
+				{
+					name: "differenceScale"
+					label: qsTr("Scale of the Cauchy distribution for group-difference parameters:")
+					value: 1
+					min: 0
+					inclusive: JASP.None
+					preferredWidth: 300
+					visible: model.currentValue === "omrf" && hasSplit
 				}
 
 				DoubleField

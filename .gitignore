@@ -55,3 +55,6 @@ Rproj.user
 /.Rprofile
 /renv
 _processedLockFile.lock
+
+# run-jasp executable for Linux (remove in future pull request)
+run-jasp.sh
