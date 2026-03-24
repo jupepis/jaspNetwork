@@ -167,7 +167,7 @@ Form
 
       DoubleField
 			{
-				name: "PriorDiffProb"
+				name: "priorDiffProb"
 				label: qsTr("Prior difference probability:")
 				value: 0.5
 				min: 0
@@ -317,7 +317,7 @@ Form
 					min: 0
 					inclusive: JASP.None
 					preferredWidth: 300
-					visible: model.currentValue === "omrf"
+					visible: model.currentValue === "omrf" && !hasSplit
 				}
 
 				DoubleField

@@ -65,12 +65,14 @@ NetworkAnalysis <- function(jaspResults, dataset, options) {
   }
 
   if (options[["groupingVariable"]] == "") { # one network
-    dataset <- list(dataset) # for compatability with the split behaviour
+    dataset <- list(dataset) # for compatibility with the split behavior
     names(dataset) <- "Network"
-  } else { # multiple networks
+  } else if (options[["groupingVariable"]] != "") { # multiple networks
     groupingVariableData <- dataset[[options[["groupingVariable"]]]]
     dataset[[options[["groupingVariable"]]]] <- NULL
-    dataset <- split(dataset, groupingVariableData, drop = TRUE)
+    if(options[["model"]] != "omrf"){ # only for model != "omrf"
+      dataset <- split(dataset, groupingVariableData, drop = TRUE)
+    }
     attr(dataset, "groupingVariableData") <- groupingVariableData
   }
 

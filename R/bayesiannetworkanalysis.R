@@ -20,9 +20,7 @@ BayesianNetworkAnalysis <- function(jaspResults, dataset, options) {
   # MissingValues needed for the .networkAnalysisReadData function in the frequentist network module:
   options[["missingValues"]] <- "listwise" # Unfortunately BDgraph does not work with pairwise missing values
 
-  if(!options[["anova"]]){
-    dataset <- .networkAnalysisReadData(dataset, options) # from networkanalysis.R
-  }
+  dataset <- .networkAnalysisReadData(dataset, options) # from networkanalysis.R
 
   mainContainer <- .bayesianNetworkAnalysisSetupMainContainerAndTable(jaspResults, dataset, options)
   .bayesianNetworkAnalysisErrorCheck(mainContainer, dataset, options)
@@ -85,28 +83,28 @@ BayesianNetworkAnalysis <- function(jaspResults, dataset, options) {
   # check for errors, but only if there was a change in the data (which implies state[["network"]] is NULL)
   if (is.null(mainContainer[["networkState"]])) {
     groupingVariable <- attr(dataset, "groupingVariable")
-    dataset <- Reduce(rbind.data.frame, dataset)
+    if(is.list(dataset)) { # when groupingVariable is defined and model != "omrf", then dataset is a list of datasets. We then need to flatten the list to the original dataset (this does not seem efficient)
+      dataset <- do.call(rbind,dataset) # Reduce(rbind.data.frame, dataset)
+    }
 
     if (options[["groupingVariable"]] != "") {
-      # these cannot be chained unfortunately - this will be changed to bgmCompare soon
       groupingVariableName <- options[["groupingVariable"]]
-      dfGroup <- data.frame(groupingVariable)
-      colnames(dfGroup) <- groupingVariableName
-      .hasErrors(dataset = dfGroup,
+      dataset[[groupingVariableName]] <- groupingVariable
+      .hasErrors(dataset = dataset,
                  type = c("missingValues", "factorLevels", "observations"),
                  missingValues.target = groupingVariableName,
                  factorLevels.target = groupingVariableName,
                  factorLevels.amount = "< 2",
                  observations.amount = "< 3",
                  observations.grouping = groupingVariableName,
+                 observations.target = groupingVariableName,
                  exitAnalysisIfErrors = TRUE)
-      dataset[[options[["groupingVariable"]]]] <- groupingVariable
-      groupingVariable <- options[["groupingVariable"]]
+
     } else {
       .hasErrors(dataset = dataset,
                  type = c("observations"),
                  observations.amount = "< 3",
- #                all.target = options[["variables"]],
+                 all.target = options[["variables"]],
                  exitAnalysisIfErrors = TRUE)
     }
   }
@@ -205,13 +203,7 @@ BayesianNetworkAnalysis <- function(jaspResults, dataset, options) {
 
   networks <- vector("list", length(dataset))
 
-  if(options[["anova"]]) {
-    if (length(dataset) < 2L) {
-      .quitAnalysis(gettext("ANOVA option can only be used when there are exactly 2 groups."))
-    }
-    if (options[["model"]] != "omrf") {
-      .quitAnalysis(gettext("ANOVA option is only available for the Ordinal Markov Random Field."))
-    }
+  if(options[["model"]] == "omrf" && options[["groupingVariable"]] != "") {
     group_labels <- levels(dataset[[options[["groupingVariable"]]]])
     if(length(group_labels) == 2L){
       data <- list(dataset[dataset[[options[["groupingVariable"]]]]==group_labels[1L], ],
@@ -220,18 +212,19 @@ BayesianNetworkAnalysis <- function(jaspResults, dataset, options) {
     easybgmFit <- try(easybgm::easybgm_compare(data       = data,
                                   type       = "ordinal",
                                   package    = "bgms",
-                                  group_indicator = options[["groupingVariable"]], 
+                                  group_indicator = options[["groupingVariable"]],
                                   iter       = options[["iter"]],
                                   save       = TRUE,
                                   centrality = FALSE,
-                                  warmup     = options[["burnin"]], # changed name
+                                  warmup     = options[["burnin"]],
                                   chains     = 1, # fix for now (maybe add an option for the users to set this)
-                                  pairwise_scale        = options[["interactionScale"]], # changed name
-                                  main_alpha            = options[["thresholdAlpha"]], # changed name
-                                  main_beta             = options[["thresholdBeta"]],
-                                  beta_bernoulli_alpha  = options[["betaAlpha"]],
-                                  beta_bernoulli_beta   = options[["betaBeta"]],
-                                  dirichlet_alpha       = options[["dirichletAlpha"]]))
+                                  difference_scale        = options[["differenceScale"]], # changed name
+                                  difference_prior = options[["differencePrior"]],
+                                  difference_probability = options[["priorDiffProb"]],
+                                  beta_bernoulli_alpha  = options[["betaAlphaDiff"]],
+                                  beta_bernoulli_beta   = options[["betaBetaDiff"]],
+                                  main_alpha            = options[["thresholdAlpha"]],
+                                  main_beta             = options[["thresholdBeta"]]))
     if (isTryError(easybgmFit)) {
       message <- .extractErrorMessage(easybgmFit)
       .quitAnalysis(gettextf("The analysis failed with the following error message:\n%s", message))
@@ -250,7 +243,7 @@ BayesianNetworkAnalysis <- function(jaspResults, dataset, options) {
     easybgmResult$sampleGraphs           <- easybgmFit$sample_graph
     easybgmResult$samplesPosterior       <- easybgmFit$samples_posterior
 
-    networks[[1]] <- easybgmResult                             
+    networks[[1]] <- easybgmResult
   }
   else{
     for (nw in seq_along(dataset)) {
